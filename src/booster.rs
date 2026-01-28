@@ -1,30 +1,42 @@
+use crate::admin::AdminHandle;
 use tokio::sync::{mpsc, oneshot};
-
-use crate::*;
 
 // ##################################################### //
 // ################### ACTOR BACKEND ################### //
 // ##################################################### //
 
 struct Booster {
-    // TODO
+    receiver: mpsc::Receiver<BoosterMessage>,
+    admin: AdminHandle,
 }
 
 #[derive(Debug)]
 enum BoosterMessage {
-	  // TODO
+    GradeBOOST { reply_to: oneshot::Sender<()> },
 }
 
 impl Booster {
-	fn new(receiver: mpsc::Receiver<BoosterMessage>) -> Self {
-        // TODO
-        todo!()
+    fn new(receiver: mpsc::Receiver<BoosterMessage>, admin: AdminHandle) -> Self {
+        Self { receiver, admin }
     }
 
     async fn handle_message(&mut self, msg: BoosterMessage) {
-        println!("[Actor] Booster is running handle_message() with new BoosterMessage: {:?}", msg);
+        println!(
+            "[Actor] Booster is running handle_message() with new BoosterMessage: {:?}",
+            msg
+        );
         match msg {
-            // TODO
+            BoosterMessage::GradeBOOST { reply_to } => {
+                let current_grades = self.admin.get_all_student_grades().await;
+
+                let boosted_grades: Vec<f64> = current_grades
+                    .into_iter()
+                    .map(|grade| grade + 60.0)
+                    .collect();
+
+                self.admin.submit_student_grades(boosted_grades).await;
+                let _ = reply_to.send(());
+            }
         };
     }
 }
@@ -34,8 +46,9 @@ impl Booster {
 // ###################################################### //
 
 async fn run_booster_actor(mut actor: Booster) {
-    // TODO
-    todo!()
+    while let Some(msg) = actor.receiver.recv().await {
+        actor.handle_message(msg).await;
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -44,10 +57,19 @@ pub struct BoosterHandle {
 }
 
 impl BoosterHandle {
-    pub async fn new() -> Self {
-        // TODO
-        todo!()
+    pub async fn new(admin_handle: AdminHandle) -> Self {
+        let (sender, receiver) = mpsc::channel(8);
+        let actor = Booster::new(receiver, admin_handle);
+        tokio::spawn(run_booster_actor(actor));
+        Self { sender }
     }
 
-    // TODO
+    pub async fn grade_boost(&self) {
+        let (tx, rx) = oneshot::channel();
+        let _ = self
+            .sender
+            .send(BoosterMessage::GradeBOOST { reply_to: tx })
+            .await;
+        let _ = rx.await;
+    }
 }
